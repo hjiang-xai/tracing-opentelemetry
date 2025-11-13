@@ -1025,7 +1025,13 @@ where
     /// [OpenTelemetry `Span`]: opentelemetry::trace::Span
     /// [tracing `Span`]: tracing::Span
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
+        // Defensive: In rare cases (high concurrency, per-layer filtering, nested span
+        // creation inside in_scope), the span may not be in the registry when on_new_span
+        // is called. This was observed in production with tokio's batch_semaphore creating
+        // spans inside Span::in_scope under heavy load. Gracefully skip rather than panic.
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
         let mut extensions = span.extensions_mut();
 
         if self.tracked_inactivity && extensions.get_mut::<Timings>().is_none() {
@@ -1099,7 +1105,9 @@ where
             return;
         }
 
-        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
         let mut extensions = span.extensions_mut();
 
         if self.context_activation {
@@ -1126,7 +1134,9 @@ where
     }
 
     fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
         let mut extensions = span.extensions_mut();
 
         if let Some(otel_data) = extensions.get_mut::<OtelData>() {
@@ -1154,7 +1164,9 @@ where
     ///
     /// [`attributes`]: opentelemetry::trace::SpanBuilder::attributes
     fn on_record(&self, id: &Id, values: &Record<'_>, ctx: Context<'_, S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
         let mut updates = SpanBuilderUpdates::default();
         values.record(&mut SpanAttributeVisitor {
             span_builder_updates: &mut updates,
@@ -1178,7 +1190,9 @@ where
     }
 
     fn on_follows_from(&self, id: &Id, follows: &Id, ctx: Context<S>) {
-        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
         let mut extensions = span.extensions_mut();
         let data = extensions
             .get_mut::<OtelData>()
@@ -1347,7 +1361,9 @@ where
     ///
     /// [`Span`]: opentelemetry::trace::Span
     fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
-        let span = ctx.span(&id).expect("Span not found, this is a bug");
+        let Some(span) = ctx.span(&id) else {
+            return;
+        };
         // Now get mutable extensions for removal
         let (otel_data, timings) = {
             let mut extensions = span.extensions_mut();
