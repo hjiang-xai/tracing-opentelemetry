@@ -1025,10 +1025,6 @@ where
     /// [OpenTelemetry `Span`]: opentelemetry::trace::Span
     /// [tracing `Span`]: tracing::Span
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
-        // Defensive: In rare cases (high concurrency, per-layer filtering, nested span
-        // creation inside in_scope), the span may not be in the registry when on_new_span
-        // is called. This was observed in production with tokio's batch_semaphore creating
-        // spans inside Span::in_scope under heavy load. Gracefully skip rather than panic.
         let Some(span) = ctx.span(id) else {
             return;
         };
